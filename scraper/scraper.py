@@ -36,7 +36,6 @@ def parse_top_anime_page(html: str):
     # Il faudra peut-être les ajuster après un test avec Inspecter l'élément.
     rows = soup.select(".ranking-list")
 
-    print(f"[DEBUG] Nombre de blocs d'anime trouvés: {len(rows)}")
 
     for row in rows:
         # Titre + URL
@@ -195,44 +194,66 @@ def scrap_anime_detail(url: str) -> dict:
     }
 
 
-if __name__ == "__main__":
-    print("[INFO] Début du scraping complet du Top Anime...")
+def scrap_full_top(max_anime: int = 50):
+    """
+    Scrape autant d'animes que demandé dans le Top MyAnimeList,
+    en parcourant les pages Next 50 automatiquement.
+    Affichage : messages INFO + barre de progression compacte.
+    """
+
+    print(f"[INFO] Démarrage du scraping du top {max_anime} animes...")
 
     dataset = []
-    top_animes = scrap_top_anime(limit_start=0)
+    bar_length = 30
+    count = 0
+    limit_start = 0   # commence à la page 1 (top 50)
 
-    # On limite à 50 ici, mais tu peux changer
-    to_scrape = top_animes[:50]
-    total = len(to_scrape)
+    while count < max_anime:
+        # Récupère une page
+        page_animes = scrap_top_anime(limit_start=limit_start)
+        if not page_animes:
+            break  # plus de pages
 
-    print(f"[INFO] Nombre d'animes trouvés dans le top : {total}")
+        for anime in page_animes:
+            if count >= max_anime:
+                break
 
-    bar_length = 30  # taille de la barre de progression
+            count += 1
 
-    for i, anime in enumerate(to_scrape, start=1):
-        # --- Effacer la ligne précédente ---
-        print("\r\033[K", end="")
+            # Barre de progression
+            progress = count / max_anime
+            filled = int(progress * bar_length)
+            bar = "#" * filled + "-" * (bar_length - filled)
 
-        # --- Affichage barre de progression ---
-        progress = i / total
-        filled = int(bar_length * progress)
-        bar = "#" * filled + "-" * (bar_length - filled)
+            # Nettoyer la ligne précédente + afficher la nouvelle
+            print("\r\033[K", end="")
+            print(
+                f"[INFO] [{bar}] {count}/{max_anime} - {anime['title'][:40]}",
+                end="",
+                flush=True
+            )
 
-        print(
-            f"\r[INFO] [{bar}] {i}/{total} - {anime['title']}",
-            end="",
-            flush=True,
-        )
+            # Scraping des détails
+            details = scrap_anime_detail(anime["url"])
+            dataset.append(details)
 
-        # --- Scraping des détails ---
-        details = scrap_anime_detail(anime["url"])
-        dataset.append(details)
+        # page suivante (Next 50)
+        limit_start += 50
 
+    # Fin du scraping
     print("\r\033[K", end="")
-    print(f"\r[INFO] [{bar}] {i}/{total}")
-    print(f"\n[INFO] Scraping terminé : {len(dataset)} animes récupérés.")
+    print(f"[INFO] [{bar}] {count}/{max_anime}")
+    print(f"[INFO] Scraping terminé : {len(dataset)} animes récupérés.")
 
-    # petit aperçu
+    return dataset
+
+
+if __name__ == "__main__":
+    MAX = 120  # nombre d'animes total à scraper
+
+    dataset = scrap_full_top(MAX)
+
+    # Petit aperçu
     for j, anime in enumerate(dataset[:3], start=1):
         print(f"\n{j:02d}. {anime['title']}")
         print(f"   Genres : {anime['genres']}")
