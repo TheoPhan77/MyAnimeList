@@ -31,39 +31,75 @@ def fetch_html(url: str) -> str:
 def parse_top_anime_page(html: str):
     """
     Parse une page du top anime.
-    Renvoie une liste de dicts {title, url, score}.
+    Renvoie une liste de dicts légers (pour affichage liste).
     """
     soup = BeautifulSoup(html, "html.parser")
     animes = []
-
-    # ⚠️ Les sélecteurs ci-dessous dépendent du HTML exact de MyAnimeList.
-    # Il faudra peut-être les ajuster après un test avec Inspecter l'élément.
     rows = soup.select(".ranking-list")
 
-
     for row in rows:
+        # Rank (position)
+        rank_tag = row.select_one("td.rank")
+        rank = None
+        if rank_tag:
+            rank_txt = rank_tag.get_text(strip=True)
+            try:
+                rank = int(rank_txt)
+            except ValueError:
+                rank = None
+
         # Titre + URL
         title_tag = row.select_one("h3.anime_ranking_h3 a")
         if not title_tag:
             continue
 
         title = title_tag.get_text(strip=True)
-        url = title_tag["href"]
+        url = title_tag.get("href")
+
+        # mal_id (stable)
+        mal_id = extract_mal_id(url) if url else None
 
         # Score
         score_tag = row.select_one("span.score-label")
         score = None
-        if score_tag and score_tag.get_text(strip=True) != "N/A":
-            try:
-                score = float(score_tag.get_text(strip=True))
-            except ValueError:
-                score = None
+        if score_tag:
+            txt = score_tag.get_text(strip=True)
+            if txt != "N/A":
+                try:
+                    score = float(txt)
+                except ValueError:
+                    score = None
+
+        # Image (thumbnail)
+        img_tag = row.select_one("img")  # souvent le premier img du bloc
+        image_url = None
+        if img_tag:
+            # MAL utilise parfois data-src (lazy loading)
+            image_url = img_tag.get("data-src") or img_tag.get("src")
+
+        # Type + episodes (optionnel, visible sur la ligne du top)
+        type_ = None
+        episodes = None
+        info_tag = row.select_one("div.information")
+        if info_tag:
+            info_text = info_tag.get_text(" ", strip=True)
+            # Exemple: "TV (28 eps)" ou "Movie (1 eps)"
+            # On tente un parse simple
+            m = re.search(r"^(TV|Movie|OVA|ONA|Special|Music)\s*\((\d+)\s*eps\)", info_text)
+            if m:
+                type_ = m.group(1)
+                episodes = m.group(2)
 
         animes.append(
             {
+                "mal_id": mal_id,
+                "rank": rank,
                 "title": title,
                 "url": url,
                 "score": score,
+                "image_url": image_url,
+                "type": type_,
+                "episodes": episodes,
             }
         )
 
@@ -277,17 +313,21 @@ def save_dataset_json(dataset: list[dict], filename: str):
 
 
 if __name__ == "__main__":
-    MAX = 10  # nombre d'animes total à scraper
+    # === TEST : précharger le top 300 en mode "liste légère" ===
+    top_300 = []
 
-    dataset = scrap_full_top(MAX)
+    for limit in range(0, 300, 50):
+        print(f"[INFO] Récupération Top Anime (limit={limit})")
+        page = scrap_top_anime(limit_start=limit)
+        top_300.extend(page)
 
-    # Sauvegarde JSON
+    print(f"[INFO] Nombre d'animes récupérés : {len(top_300)}")
+
+    # aperçu
+    for anime in top_300[:3]:
+        print(anime)
+
+    # --- Sauvegarde JSON ---
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_dataset_json(dataset, f"anime_dataset_top_{MAX}_{timestamp}.json")
-
-    # Petit aperçu
-    for j, anime in enumerate(dataset[:3], start=1):
-        print(f"\n{j:02d}. {anime['title']}")
-        print(f"   Genres : {anime['genres']}")
-        print(f"   Score  : {anime['score']}")
+    save_dataset_json(top_300, f"top_300_light_{timestamp}.json")
 
