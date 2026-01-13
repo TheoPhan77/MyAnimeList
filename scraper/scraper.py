@@ -2,9 +2,7 @@ import time
 import requests
 from bs4 import BeautifulSoup
 import re
-import json
-from pathlib import Path
-from datetime import datetime
+from pymongo import MongoClient, UpdateOne
 
 
 BASE_URL = "https://myanimelist.net"
@@ -290,30 +288,54 @@ def scrap_full_top(max_anime: int = 50):
     return dataset
 
 
-def save_dataset_json(dataset: list[dict], filename: str):
+def get_mongo_client():
+    # Mongo dans docker, exposé sur localhost:27017
+    uri = "mongodb://root:rootpass@localhost:27017/?authSource=admin"
+    return MongoClient(uri)
+
+
+def upsert_anime_list_to_mongo(anime_list: list[dict], db_name="animedb", collection_name="anime_list"):
     """
-    Sauvegarde le dataset JSON dans le dossier /data
-    à la racine du projet (indépendamment du dossier de lancement).
+    Insère/Met à jour (upsert) une liste d'animes "légers" dans Mongo.
+    On utilise _id = mal_id pour éviter les doublons.
     """
-    # Chemin absolu vers le fichier scraper.py
-    script_dir = Path(__file__).resolve().parent
+    client = get_mongo_client()
+    col = client[db_name][collection_name]
 
-    # Racine du projet = dossier parent de /scraper
-    project_root = script_dir.parent
+    ops = []
+    skipped = 0
 
-    data_dir = project_root / "data"
-    data_dir.mkdir(exist_ok=True)
+    for a in anime_list:
+        mal_id = a.get("mal_id")
+        if mal_id is None:
+            skipped += 1
+            continue
 
-    output_path = data_dir / filename
+        doc = dict(a)
+        doc["_id"] = mal_id
+        doc.pop("mal_id", None)
 
-    with output_path.open("w", encoding="utf-8") as f:
-        json.dump(dataset, f, ensure_ascii=False, indent=2)
+        ops.append(
+            UpdateOne(
+                {"_id": mal_id},
+                {"$set": doc},
+                upsert=True
+            )
+        )
 
-    print(f"[INFO] Dataset JSON sauvegardé : {output_path} ({len(dataset)} animes)")
+    if ops:
+        res = col.bulk_write(ops, ordered=False)
+        print(
+            f"[INFO] Mongo upsert OK | matched={res.matched_count} "
+            f"modified={res.modified_count} upserted={len(res.upserted_ids)} skipped={skipped}"
+        )
+    else:
+        print(f"[WARN] Rien à insérer. skipped={skipped}")
+
+    client.close()
 
 
 if __name__ == "__main__":
-    # === TEST : précharger le top 300 en mode "liste légère" ===
     top_300 = []
 
     for limit in range(0, 300, 50):
@@ -327,7 +349,12 @@ if __name__ == "__main__":
     for anime in top_300[:3]:
         print(anime)
 
-    # --- Sauvegarde JSON ---
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_dataset_json(top_300, f"top_300_light_{timestamp}.json")
+    # Insert/Upsert Mongo (si tu as déjà ajouté les fonctions Mongo)
+    upsert_anime_list_to_mongo(top_300)
 
+    # Vérification Mongo (optionnel, utile en dev)
+    client = get_mongo_client()
+    col = client["animedb"]["anime_list"]
+    print("[INFO] Count anime_list:", col.count_documents({}))
+    print("[INFO] Exemple doc:", col.find_one({}))
+    client.close()
