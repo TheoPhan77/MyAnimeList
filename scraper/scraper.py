@@ -2,6 +2,10 @@ import time
 import requests
 from bs4 import BeautifulSoup
 import re
+import json
+from pathlib import Path
+from datetime import datetime
+
 
 BASE_URL = "https://myanimelist.net"
 TOP_ANIME_URL = f"{BASE_URL}/topanime.php"
@@ -86,6 +90,7 @@ def extract_mal_id(url: str) -> int | None:
 
 
 def scrap_anime_detail(url: str) -> dict:
+    mal_id = extract_mal_id(url)
     html = fetch_html(url)
     soup = BeautifulSoup(html, "html.parser")
 
@@ -169,6 +174,7 @@ def scrap_anime_detail(url: str) -> dict:
                 members = stat.replace("Members", "").strip()
 
     return {
+        "mal_id": mal_id,
         "title": title,
         "title_english": title_english,
         "url": url,
@@ -248,10 +254,36 @@ def scrap_full_top(max_anime: int = 50):
     return dataset
 
 
+def save_dataset_json(dataset: list[dict], filename: str):
+    """
+    Sauvegarde le dataset JSON dans le dossier /data
+    à la racine du projet (indépendamment du dossier de lancement).
+    """
+    # Chemin absolu vers le fichier scraper.py
+    script_dir = Path(__file__).resolve().parent
+
+    # Racine du projet = dossier parent de /scraper
+    project_root = script_dir.parent
+
+    data_dir = project_root / "data"
+    data_dir.mkdir(exist_ok=True)
+
+    output_path = data_dir / filename
+
+    with output_path.open("w", encoding="utf-8") as f:
+        json.dump(dataset, f, ensure_ascii=False, indent=2)
+
+    print(f"[INFO] Dataset JSON sauvegardé : {output_path} ({len(dataset)} animes)")
+
+
 if __name__ == "__main__":
-    MAX = 120  # nombre d'animes total à scraper
+    MAX = 10  # nombre d'animes total à scraper
 
     dataset = scrap_full_top(MAX)
+
+    # Sauvegarde JSON
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    save_dataset_json(dataset, f"anime_dataset_top_{MAX}_{timestamp}.json")
 
     # Petit aperçu
     for j, anime in enumerate(dataset[:3], start=1):
