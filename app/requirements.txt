@@ -1,0 +1,7 @@
+streamlit
+pandas
+plotly
+requests
+beautifulsoup4
+pymongo
+elasticsearch==8.13.2

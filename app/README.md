@@ -1,2 +1,5 @@
-MyAnimeList
-Projet en binôme dans le cadre du module Data Engineering en E4 DSIA à l'ESIEE Paris. Travail en binôme de Théo PHAN et Yoan ROUL
+App-level documentation is centralized in the project root:
+
+- `../README.md`
+- `../SOUTENANCE_CHECKLIST.md`
+
