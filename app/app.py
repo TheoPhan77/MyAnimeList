@@ -7,8 +7,17 @@ from html import escape
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+import base64
+import textwrap
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+def _asset_b64(*parts) -> str:
+    path = os.path.join(ROOT, *parts)
+    if not os.path.exists(path):
+        return ""
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
+
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
@@ -18,8 +27,6 @@ st.set_page_config(page_title="AniMatch", layout="wide")
 
 HIDDEN_EXCLUDED_TYPES = tuple(sorted(mal.DEFAULT_EXCLUDED_TYPES))
 
-# Fallback catalogs so users can see a complete genre/theme list
-# even before all detail pages are hydrated.
 GENRE_CATALOG = [
     "Action",
     "Adventure",
@@ -126,212 +133,450 @@ def improve_image_quality(url):
     return re.sub(r"/r/\d+x\d+/", "/", url)
 
 
+def sync_view_from_query_params():
+    if "active_view" not in st.session_state:
+        st.session_state.active_view = "Top"
+
+    view = st.query_params.get("view")
+    if isinstance(view, list):
+        view = view[0]
+    if not view:
+        return
+
+    view = str(view).lower().strip()
+    mapping = {"top": "Top", "search": "Search", "reco": "Recommendations"}
+    if view in mapping:
+        st.session_state.active_view = mapping[view]
+
+
+def _hero_bg_base64() -> str:
+    return _asset_b64("background", "anime_background.jpg")
+
+
 def inject_global_styles():
-    st.markdown(
-        """
-        <style>
-        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap');
+    bg64 = _hero_bg_base64()
+    hero_bg_image = f'url("data:image/jpeg;base64,{bg64}")' if bg64 else "none"
 
-        :root {
-            --am-bg-1: #071923;
-            --am-bg-2: #0f2d3d;
-            --am-bg-3: #143f53;
-            --am-card: rgba(8, 25, 36, 0.84);
-            --am-text: #e8f8ff;
-            --am-muted: #99b8c9;
-            --am-accent: #2ad6c2;
-            --am-accent-2: #ffb84d;
-            --am-border: rgba(131, 192, 214, 0.28);
-        }
+    css = f"""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap');
 
-        .stApp {
-            color: var(--am-text);
-            background:
-                radial-gradient(1200px 600px at 95% -10%, rgba(42, 214, 194, 0.16), transparent 62%),
-                radial-gradient(1200px 680px at -10% 110%, rgba(255, 184, 77, 0.12), transparent 62%),
-                linear-gradient(145deg, var(--am-bg-1), var(--am-bg-2) 45%, var(--am-bg-3));
-        }
+    :root {{
+        --am-bg-1: #071923;
+        --am-bg-2: #0f2d3d;
+        --am-bg-3: #143f53;
+        --am-card: rgba(8, 25, 36, 0.78);
+        --am-text: #e8f8ff;
+        --am-muted: #99b8c9;
+        --am-accent: #2ad6c2;
+        --am-accent-2: #ffb84d;
+        --am-border: rgba(131, 192, 214, 0.28);
+    }}
 
-        html, body, [class*="css"] {
-            font-family: 'Space Grotesk', sans-serif;
-        }
+    html, body {{
+        height: 100%;
+        margin: 0;
+        overflow-x: hidden;
+        font-family: 'Space Grotesk', sans-serif;
+        color: var(--am-text);
 
-        h1, h2, h3 {
-            font-family: 'Sora', sans-serif;
-            letter-spacing: 0.2px;
-        }
+        background-image:
+            radial-gradient(1200px 600px at 95% -10%, rgba(42, 214, 194, 0.16), transparent 62%),
+            radial-gradient(1200px 680px at -10% 110%, rgba(255, 184, 77, 0.12), transparent 62%),
+            linear-gradient(145deg, rgba(7, 25, 35, 1), rgba(15, 45, 61, 1) 45%, rgba(20, 63, 83, 1));
+        background-repeat: no-repeat, no-repeat, no-repeat;
+        background-position: 95% -10%, -10% 110%, center;
+        background-size: auto, auto, cover;
+        background-attachment: scroll;
+    }}
 
-        section[data-testid="stSidebar"] {
-            background: linear-gradient(180deg, rgba(4, 18, 27, 0.96), rgba(9, 31, 45, 0.92));
-            border-right: 1px solid var(--am-border);
-        }
+    .stApp {{
+        background: transparent !important;
+        color: var(--am-text);
+    }}
 
-        [data-testid="stSidebar"] .stButton>button,
-        [data-testid="stSidebar"] .stNumberInput,
-        [data-testid="stSidebar"] [data-baseweb="select"] {
-            animation: amRise 0.35s ease both;
-        }
+    h1, h2, h3 {{
+        font-family: 'Sora', sans-serif;
+        letter-spacing: 0.2px;
+    }}
 
-        .stButton>button {
-            border-radius: 12px;
-            border: 1px solid var(--am-border);
-            background: linear-gradient(140deg, rgba(32, 81, 103, 0.8), rgba(17, 55, 74, 0.92));
-            color: var(--am-text);
-            font-weight: 600;
-            transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
-        }
+    header[data-testid="stHeader"] {{ display: none; }}
+    div[data-testid="stToolbar"] {{ display: none; }}
+    #MainMenu {{ visibility: hidden; }}
+    footer {{ visibility: hidden; }}
 
-        .stButton>button:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.28);
-            border-color: rgba(42, 214, 194, 0.85);
-        }
+    div.block-container {{
+        padding-top: 0rem;
+        padding-bottom: 1rem;
+    }}
+    div[data-testid="stMainBlockContainer"] {{
+        padding-top: 0 !important;
+    }}
 
-        div[data-testid="stVerticalBlockBorderWrapper"] {
-            border-radius: 16px;
-            border: 1px solid var(--am-border);
-            background: linear-gradient(155deg, rgba(9, 32, 45, 0.9), rgba(7, 23, 34, 0.95));
-            box-shadow: 0 14px 30px rgba(3, 13, 20, 0.35);
-            animation: amRise 0.35s ease both;
-        }
+    section[data-testid="stSidebar"],
+    div[data-testid="collapsedControl"] {{
+        display: none !important;
+    }}
 
-        div[data-testid="stVerticalBlockBorderWrapper"]:hover {
-            border-color: rgba(42, 214, 194, 0.75);
-        }
+    .stButton>button {{
+        border-radius: 12px;
+        border: 1px solid var(--am-border);
+        background: linear-gradient(140deg, rgba(32, 81, 103, 0.8), rgba(17, 55, 74, 0.92));
+        color: var(--am-text);
+        font-weight: 700;
+        transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    }}
+    .stButton>button:hover {{
+        transform: translateY(-1px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.28);
+        border-color: rgba(42, 214, 194, 0.85);
+    }}
 
-        [data-testid="stTabs"] button[role="tab"] {
-            border-radius: 999px;
-            border: 1px solid var(--am-border);
-            padding: 8px 16px;
-            margin-right: 8px;
-            background: rgba(7, 26, 38, 0.7);
-            color: var(--am-muted);
-            font-weight: 600;
-        }
+    div[data-testid="stVerticalBlockBorderWrapper"] {{
+        border-radius: 16px;
+        border: 1px solid var(--am-border);
+        background: linear-gradient(155deg, rgba(9, 32, 45, 0.76), rgba(7, 23, 34, 0.84));
+        box-shadow: 0 14px 30px rgba(3, 13, 20, 0.35);
+        animation: amRise 0.35s ease both;
+    }}
+    div[data-testid="stVerticalBlockBorderWrapper"]:hover {{
+        border-color: rgba(42, 214, 194, 0.75);
+    }}
 
-        [data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
-            color: #001219;
-            border-color: rgba(42, 214, 194, 0.9);
-            background: linear-gradient(120deg, var(--am-accent), #7df9df);
-        }
+    [data-testid="metric-container"] {{
+        border: 1px solid var(--am-border);
+        border-radius: 16px;
+        background: linear-gradient(150deg, rgba(10, 35, 48, 0.76), rgba(8, 24, 35, 0.84));
+        padding: 10px 14px;
+        box-shadow: 0 10px 20px rgba(3, 12, 19, 0.28);
+    }}
+    [data-testid="metric-container"] [data-testid="stMetricValue"] {{
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        max-width: none !important;
+        line-height: 1.15 !important;
+    }}
 
-        [data-testid="metric-container"] {
-            border: 1px solid var(--am-border);
-            border-radius: 16px;
-            background: linear-gradient(150deg, rgba(10, 35, 48, 0.9), rgba(8, 24, 35, 0.94));
-            padding: 10px 14px;
-            box-shadow: 0 10px 20px rgba(3, 12, 19, 0.28);
-        }
+    .am-meta {{
+        color: rgba(232, 248, 255, 0.78);
+        font-size: 0.92rem;
+        margin-bottom: 6px;
+    }}
 
-        .am-hero {
-            border: 1px solid var(--am-border);
-            border-radius: 20px;
-            padding: 26px 28px;
-            margin-bottom: 14px;
-            background: linear-gradient(135deg, rgba(10, 34, 47, 0.9), rgba(9, 26, 38, 0.95));
-            box-shadow: 0 18px 36px rgba(1, 9, 16, 0.36);
-            animation: amFadeIn 0.45s ease both;
-        }
+    .am-hero {{
+        position: relative;
+        min-height: 100vh;
 
-        .am-hero-kicker {
-            color: var(--am-accent-2);
-            font-weight: 700;
-            letter-spacing: 0.1em;
-            text-transform: uppercase;
-            font-size: 0.78rem;
-            margin-bottom: 8px;
-            font-family: 'Sora', sans-serif;
-        }
+        width: 100vw;
+        margin-left: calc(50% - 50vw);
+        margin-right: calc(50% - 50vw);
+        margin-top: 0;
 
-        .am-hero-title {
-            margin: 0;
-            font-size: clamp(2rem, 3vw, 3.1rem);
-            line-height: 1.05;
-            font-family: 'Sora', sans-serif;
-            letter-spacing: -0.01em;
-            background: linear-gradient(120deg, #dffbff, #7ef2e5 40%, #ffd394);
-            -webkit-background-clip: text;
-            background-clip: text;
-            color: transparent;
-        }
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
 
-        .am-hero-sub {
-            margin: 10px 0 0;
-            color: var(--am-muted);
-            font-size: 1.03rem;
-            max-width: 850px;
-        }
+        padding: 84px 24px 52px;
 
-        .am-meta {
-            color: var(--am-muted);
-            font-size: 0.92rem;
-            margin-bottom: 6px;
-        }
+        background-image:
+            radial-gradient(1000px 520px at 90% -5%, rgba(42, 214, 194, 0.16), transparent 60%),
+            radial-gradient(1000px 580px at -8% 108%, rgba(255, 184, 77, 0.12), transparent 60%),
+            {hero_bg_image};
+        background-repeat: no-repeat, no-repeat, no-repeat;
+        background-position: 90% -5%, -8% 108%, center;
+        background-size: auto, auto, cover;
+    }}
 
-        .am-chip-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-top: 8px;
-            align-items: center;
-        }
+    .am-hero::before {{
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(180deg, rgba(4,16,24,0.40), rgba(4,16,24,0.78));
+    }}
 
-        .am-chip {
-            border-radius: 999px;
-            border: 1px solid rgba(126, 242, 229, 0.45);
-            padding: 2px 10px;
-            background: rgba(18, 56, 74, 0.74);
-            font-size: 0.8rem;
-            color: #dffbff;
-        }
+    .am-hero-inner {{
+        position: relative;
+        z-index: 1;
+        max-width: 980px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        align-items: center;
+    }}
 
-        .am-chip-label {
-            color: var(--am-accent-2);
-            font-weight: 700;
-            font-size: 0.78rem;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            margin-right: 4px;
-        }
+    .am-hero-kicker {{
+        color: var(--am-accent-2);
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        font-size: 0.78rem;
+        font-family: 'Sora', sans-serif;
+    }}
 
-        .am-image-placeholder {
-            border-radius: 12px;
-            border: 1px dashed rgba(153, 184, 201, 0.45);
-            padding: 24px 10px;
-            text-align: center;
-            color: var(--am-muted);
-            font-size: 0.86rem;
-        }
+    .am-hero-title {{
+        margin: 0;
+        font-size: clamp(2.3rem, 3.8vw, 3.4rem);
+        line-height: 1.02;
+        font-family: 'Sora', sans-serif;
+        letter-spacing: -0.01em;
+        background: linear-gradient(120deg, #dffbff, #7ef2e5 40%, #ffd394);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+    }}
 
-        @keyframes amFadeIn {
-            from { opacity: 0; transform: translateY(8px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+    .am-hero-sub {{
+        margin: 0;
+        color: rgba(232, 248, 255, 0.88);
+        font-size: 1.08rem;
+        max-width: 860px;
+    }}
 
-        @keyframes amRise {
-            from { opacity: 0; transform: translateY(6px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
+    .am-mode-row {{
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: center;
+        margin-top: 12px;
+        padding: 14px 16px;
+        border: 1px solid rgba(131, 192, 214, 0.22);
+        border-radius: 16px;
+        background: rgba(8, 25, 36, 0.60);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+    }}
+
+    .am-mode-chip {{
+        display: inline-block;
+        padding: 8px 14px;
+        border-radius: 999px;
+        border: 1px solid rgba(131, 192, 214, 0.28);
+        background: rgba(18, 56, 74, 0.48);
+        color: rgba(232, 248, 255, 0.92);
+        text-decoration: none !important;
+        font-weight: 800;
+        transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+    }}
+
+    button.am-mode-chip {{
+        appearance: none;
+        -webkit-appearance: none;
+        cursor: pointer;
+        font-family: 'Sora', sans-serif;
+        font-size: 0.95rem;
+    }}
+
+    .am-mode-chip:hover {{
+        transform: translateY(-1px);
+        border-color: rgba(42, 214, 194, 0.85);
+        background: rgba(18, 56, 74, 0.62);
+    }}
+
+    .am-mode-chip.active {{
+        border-color: rgba(42, 214, 194, 0.95);
+        background: rgba(42, 214, 194, 0.12);
+    }}
+
+    .am-scroll-cue {{
+        margin-top: 22px;
+        opacity: 0.75;
+        font-size: 1.2rem;
+        animation: amBounce 1.4s ease-in-out infinite;
+    }}
+
+    .am-stats-grid {{
+        position: relative;
+        z-index: 2;
+        width: min(1200px, 96vw);
+        margin: -34px auto 22px;
+        padding: 0 12px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(200px, 1fr));
+        gap: 12px;
+    }}
+
+    .am-stat-card {{
+        border: 1px solid rgba(131, 192, 214, 0.30);
+        border-radius: 18px;
+        background: linear-gradient(145deg, rgba(8, 30, 44, 0.92), rgba(12, 43, 60, 0.94));
+        box-shadow: 0 12px 26px rgba(3, 13, 20, 0.36);
+        padding: 14px 16px 15px;
+        overflow: hidden;
+    }}
+
+    .am-stat-label {{
+        font-family: 'Sora', sans-serif;
+        font-size: 0.76rem;
+        text-transform: uppercase;
+        letter-spacing: 0.09em;
+        color: rgba(200, 230, 244, 0.72);
+    }}
+
+    .am-stat-value {{
+        margin-top: 4px;
+        line-height: 1.05;
+        font-size: clamp(1.7rem, 2.9vw, 2.35rem);
+        font-weight: 800;
+        font-family: 'Sora', sans-serif;
+        background: linear-gradient(120deg, #e8fbff, #8df9ec 46%, #ffd79e);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+    }}
+
+    .am-stat-note {{
+        margin-top: 6px;
+        font-size: 0.82rem;
+        color: rgba(188, 221, 236, 0.84);
+    }}
+
+    @media (max-width: 980px) {{
+        .am-stats-grid {{
+            grid-template-columns: repeat(2, minmax(180px, 1fr));
+        }}
+    }}
+
+    @media (max-width: 680px) {{
+        .am-stats-grid {{
+            margin-top: -24px;
+            grid-template-columns: 1fr;
+        }}
+    }}
+
+    .am-controls-head {{
+        margin-bottom: 10px;
+    }}
+
+    .am-controls-kicker {{
+        font-family: 'Sora', sans-serif;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        font-size: 0.72rem;
+        color: rgba(255, 184, 77, 0.92);
+        margin-bottom: 2px;
+    }}
+
+    .am-controls-title {{
+        margin: 0;
+        font-family: 'Sora', sans-serif;
+        font-size: clamp(1.3rem, 2.2vw, 1.7rem);
+        color: #eaf9ff;
+    }}
+
+    .am-controls-sub {{
+        margin: 6px 0 10px;
+        color: rgba(197, 225, 238, 0.88);
+        font-size: 0.92rem;
+    }}
+
+    .am-controls-pill-row {{
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }}
+
+    .am-controls-pill {{
+        border: 1px solid rgba(131, 192, 214, 0.34);
+        background: rgba(11, 40, 56, 0.72);
+        color: rgba(220, 242, 252, 0.94);
+        border-radius: 999px;
+        padding: 6px 11px;
+        font-size: 0.8rem;
+        line-height: 1;
+    }}
+
+    .am-controls-footnote {{
+        margin-top: 8px;
+        color: rgba(184, 216, 230, 0.86);
+        font-size: 0.83rem;
+    }}
+
+    div[data-testid="stExpander"] {{
+        border: 1px solid rgba(131, 192, 214, 0.28) !important;
+        border-radius: 14px !important;
+        background: linear-gradient(155deg, rgba(10, 35, 49, 0.74), rgba(8, 24, 35, 0.82));
+    }}
+
+    div[data-testid="stExpander"] summary p {{
+        font-family: 'Sora', sans-serif;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+    }}
+
+    div[data-testid="stNumberInput"] input {{
+        border-radius: 10px !important;
+        border: 1px solid rgba(131, 192, 214, 0.32) !important;
+        background: rgba(9, 32, 44, 0.8) !important;
+        color: var(--am-text) !important;
+    }}
+
+    @keyframes amBounce {{
+        0%, 100% {{ transform: translateY(0); }}
+        50% {{ transform: translateY(6px); }}
+    }}
+
+    @keyframes amRise {{
+        from {{ opacity: 0; transform: translateY(6px); }}
+        to {{ opacity: 1; transform: translateY(0); }}
+    }}
+    </style>
+    """
+
+    st.markdown(textwrap.dedent(css), unsafe_allow_html=True)
+
+
+def render_hero(total_cached: int, total_details: int, tagline: str):
+    active = st.session_state.get("active_view", "Top")
+
+    def chip(label: str, param: str, is_active: bool):
+        cls = "am-mode-chip active" if is_active else "am-mode-chip"
+        return f'<button class="{cls}" type="submit" name="view" value="{param}">{label}</button>'
+
+    chips_html = "".join([
+        chip("Top", "top", active == "Top"),
+        chip("Search", "search", active == "Search"),
+        chip("Recommendations", "reco", active == "Recommendations"),
+    ])
+
+    safe_tagline = escape(tagline).replace("\n", "<br>")
+
+    hero_html = (
+        '<section class="am-hero">'
+        '<div class="am-hero-inner">'
+        '<div class="am-hero-kicker">Elastic Relevance Engine</div>'
+        '<h1 class="am-hero-title">AniMatch</h1>'
+        f'<p class="am-hero-sub">{safe_tagline}</p>'
+        f'<form class="am-mode-row" method="get">{chips_html}</form>'
+        '<div class="am-scroll-cue"><span>↓</span></div>'
+        "</div>"
+        "</section>"
     )
 
+    st.markdown(hero_html, unsafe_allow_html=True)
 
-def render_hero():
-    st.markdown(
-        """
-        <section class="am-hero">
-            <div class="am-hero-kicker">Elastic Relevance Engine</div>
-            <h1 class="am-hero-title">AniMatch</h1>
-            <p class="am-hero-sub">
-                Production-ready anime discovery with live scraping, Mongo cache, and
-                Elasticsearch scoring for search and recommendations.
-            </p>
-        </section>
-        """,
-        unsafe_allow_html=True,
-    )
+    stats_html = f"""
+    <section class="am-stats-grid">
+      <article class="am-stat-card">
+        <div class="am-stat-label">Cached top list</div>
+        <div class="am-stat-value">{total_cached:,}</div>
+        <div class="am-stat-note">Anime index entries</div>
+      </article>
+      <article class="am-stat-card">
+        <div class="am-stat-label">Cached details</div>
+        <div class="am-stat-value">{total_details:,}</div>
+        <div class="am-stat-note">Hydrated detail pages</div>
+      </article>
+      <article class="am-stat-card">
+        <div class="am-stat-label">Mode</div>
+        <div class="am-stat-value">Live + Cache</div>
+        <div class="am-stat-note">MongoDB + Elasticsearch</div>
+      </article>
+    </section>
+    """
+    st.markdown(textwrap.dedent(stats_html), unsafe_allow_html=True)
 
 
 def _chips_html(label, items, max_items=8):
@@ -377,18 +622,100 @@ def enrich_results_with_top_metadata(rows, max_lookup=600):
     return enriched
 
 
-def open_details_from_row(row):
+def _get_row_mal_id(row):
     mal_id = row.get("mal_id")
     if mal_id is None and row.get("url"):
         mal_id = mal.extract_mal_id(row.get("url"))
+    return int(mal_id) if mal_id is not None else None
+
+_DIALOG = getattr(st, "dialog", None) or getattr(st, "experimental_dialog", None)
+
+def _render_anime_details(mal_id: int):
+    basic_rows = mal.get_anime_list_by_ids([mal_id])
+    if not basic_rows:
+        st.error("Anime not found in local cache. Load it first from Top.")
+        return
+
+    basic = basic_rows[0]
+
+    with st.spinner("Loading details..."):
+        details = mal.get_anime_details_cached(mal_id=mal_id, url=basic["url"])
+
+    title = details.get("title") or basic.get("title") or "Untitled"
+    subtitle = details.get("title_english") or details.get("title_japanese")
+
+    st.markdown(f"## {title}")
+    if subtitle:
+        st.caption(subtitle)
+
+    left, right = st.columns([1.1, 2.2], gap="large")
+
+    with left:
+        image_url = improve_image_quality(basic.get("image_url"))
+        if image_url:
+            st.image(image_url, use_container_width=True)
+        if basic.get("url"):
+            st.link_button("Open on MyAnimeList", basic["url"], use_container_width=True)
+
+    with right:
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Score", details.get("score") or basic.get("score") or "N/A")
+        m2.metric("Episodes", details.get("episodes") or basic.get("episodes") or "N/A")
+        m3.metric("Source", details.get("source") or "N/A")
+        m4.metric("Rating", details.get("rating") or "N/A")
+
+        genres_html = _chips_html("Genres", details.get("genres", []), max_items=12)
+        if genres_html:
+            st.markdown(genres_html, unsafe_allow_html=True)
+
+        themes_html = _chips_html("Themes", details.get("themes", []), max_items=12)
+        if themes_html:
+            st.markdown(themes_html, unsafe_allow_html=True)
+
+        studios_html = _chips_html("Studios", details.get("studios", []), max_items=8)
+        if studios_html:
+            st.markdown(studios_html, unsafe_allow_html=True)
+
+        synopsis = details.get("synopsis")
+        if synopsis:
+            with st.container(border=True):
+                st.markdown("### Synopsis")
+                st.write(synopsis)
+
+        info_left, info_right = st.columns(2)
+        with info_left:
+            with st.container(border=True):
+                st.write(f"**Status:** {details.get('status') or 'N/A'}")
+                st.write(f"**Aired:** {details.get('aired') or 'N/A'}")
+                st.write(f"**Premiered:** {details.get('premiered') or 'N/A'}")
+                st.write(f"**Demographic:** {', '.join(details.get('demographic', [])) or 'N/A'}")
+        with info_right:
+            with st.container(border=True):
+                st.write(f"**Broadcast:** {details.get('broadcast') or 'N/A'}")
+                st.write(f"**Duration:** {details.get('duration') or 'N/A'}")
+                st.write(f"**Popularity:** {details.get('popularity') or 'N/A'}")
+                st.write(f"**Members:** {details.get('members') or 'N/A'}")
+                st.write(f"**Scored by:** {details.get('scored_by') or 'N/A'}")
+
+    st.caption(f"Cached at: {details.get('details_fetched_at')}")
+
+
+if _DIALOG:
+    @_DIALOG("Anime details")
+    def show_anime_details_dialog(mal_id: int):
+        _render_anime_details(mal_id)
+else:
+    def show_anime_details_dialog(mal_id: int):
+        st.warning("Your Streamlit version doesn't support dialogs. Falling back to inline details.")
+        _render_anime_details(mal_id)
+
+
+def open_details_from_row(row):
+    mal_id = _get_row_mal_id(row)
     if mal_id is None:
         st.warning("Cannot open details for this result (missing anime id).")
         return
-    mal_id = int(mal_id)
-    st.session_state.selected_mal_id = mal_id
-    st.query_params.clear()
-    st.query_params["mal_id"] = str(mal_id)
-    st.switch_page("pages/Anime_Details.py")
+    show_anime_details_dialog(mal_id)
 
 
 def render_result_card(row, key_prefix, idx):
@@ -434,6 +761,29 @@ def render_result_card(row, key_prefix, idx):
                     st.link_button("Go to site", row["url"], use_container_width=True)
 
 
+def render_top_card(anime, idx):
+    with st.container(border=True):
+        image_url = improve_image_quality(anime.get("image_url"))
+        if image_url:
+            st.image(image_url, use_container_width=True)
+        else:
+            st.caption("No cover available")
+
+        st.markdown(f"**{anime.get('title') or 'Untitled'}**")
+        st.markdown(
+            f"<div class='am-meta'>Rank #{anime.get('rank', '?')} | "
+            f"Score {anime.get('score', 'N/A')}</div>",
+            unsafe_allow_html=True,
+        )
+
+        type_ = anime.get("type") or "Unknown"
+        episodes = anime.get("episodes") or "?"
+        st.caption(f"{type_} | {episodes} eps")
+
+        if st.button("Details", key=f"top_details_{idx}_{anime.get('mal_id', 'na')}"):
+            open_details_from_row(anime)
+
+
 if "limit" not in st.session_state:
     st.session_state.limit = 50
 if "page_skip" not in st.session_state:
@@ -466,7 +816,7 @@ def _get_page(skip: int, limit: int):
 
 
 @st.cache_data(ttl=300)
-def _get_recommender_options():
+def _get_recommendations_options():
     genres = set(mal.get_mongo_details_distinct("genres"))
     themes = set(mal.get_mongo_details_distinct("themes"))
     studios = mal.get_mongo_details_distinct("studios")
@@ -547,16 +897,105 @@ def auto_bootstrap(total_cached, total_details):
     return total_cached, total_details, "Auto-bootstrap: " + " | ".join(actions)
 
 
+def _load_top_page_and_move(next_skip: int):
+    rows = mal.fetch_next_top_page_to_mongo(limit_start=next_skip)
+    if rows:
+        st.session_state.page_skip = next_skip
+        st.session_state.top_notice = ""
+    else:
+        st.session_state.top_notice = f"No anime found for offset {next_skip}. You may be at the end."
+    st.cache_data.clear()
+    st.rerun()
+
+
+def render_data_controls(total_cached: int, total_details: int):
+    page_start = st.session_state.page_skip + 1
+    page_end = st.session_state.page_skip + st.session_state.limit
+    panel_html = f"""
+    <div class="am-controls-head">
+      <div class="am-controls-kicker">Control center</div>
+      <h3 class="am-controls-title">Data controls</h3>
+      <p class="am-controls-sub">Load ranking pages, hydrate detail cache, and keep Elasticsearch in sync.</p>
+      <div class="am-controls-pill-row">
+        <span class="am-controls-pill">Top cache: {total_cached:,}</span>
+        <span class="am-controls-pill">Details cache: {total_details:,}</span>
+        <span class="am-controls-pill">Window: {page_start}-{page_end}</span>
+      </div>
+    </div>
+    """
+
+    with st.container(border=True):
+        st.markdown(textwrap.dedent(panel_html), unsafe_allow_html=True)
+
+        c1, c2, c3, c4, c5 = st.columns([1, 1, 1, 1, 1])
+
+        if c1.button("Load Top 50", use_container_width=True):
+            st.session_state.limit = 50
+            _load_top_page_and_move(0)
+
+        if c2.button("Previous 50", use_container_width=True):
+            prev_skip = max(0, st.session_state.page_skip - 50)
+            _load_top_page_and_move(prev_skip)
+
+        if c3.button("Load Next 50", use_container_width=True):
+            next_skip = st.session_state.page_skip + 50
+            _load_top_page_and_move(next_skip)
+
+        if c4.button("Load Next 500", use_container_width=True):
+            next_skip = st.session_state.page_skip + 500
+            _load_top_page_and_move(next_skip)
+
+        with c5:
+            with st.expander("Advanced controls", expanded=False):
+                hydrate_max = max(total_cached, 1)
+                hydrate_default = min(max(total_cached, 1), 50)
+                hydrate_count = st.number_input(
+                    "Details to hydrate",
+                    min_value=1,
+                    max_value=hydrate_max,
+                    value=hydrate_default,
+                    step=1,
+                )
+                st.caption("Tip: keep 50-100 for fast demo.")
+                if st.button("Hydrate Details", use_container_width=True):
+                    with st.spinner("Hydrating details cache from top list..."):
+                        mal.hydrate_details_from_mongo_top(max_items=int(hydrate_count), max_age_hours=24)
+                    st.cache_data.clear()
+                    st.success("Hydration done.")
+                    st.rerun()
+
+                if st.button("Index All Details -> ES", use_container_width=True):
+                    try:
+                        with st.spinner("Indexing Mongo details into Elasticsearch..."):
+                            indexed_light, indexed_details, _ = sync_es_if_needed(total_cached, total_details, force=True)
+                        st.success(f"Indexed: list={indexed_light}, details={indexed_details}.")
+                    except Exception as exc:
+                        st.error("Elasticsearch unavailable.")
+                        st.code(str(exc))
+
+        st.markdown(
+            f"<div class='am-controls-footnote'>Cached in Mongo: top={total_cached:,} | details={total_details:,}</div>",
+            unsafe_allow_html=True,
+        )
+
+
+sync_view_from_query_params()
 inject_global_styles()
-render_hero()
 
 try:
     total_cached = _get_total_cached()
     total_details = _get_total_details()
 except Exception as exc:
+    total_cached, total_details = 0, 0
     st.error("Mongo not reachable. Start docker-compose first.")
     st.code(str(exc))
     hard_stop()
+
+render_hero(total_cached, total_details, "Find your next anime to watch!\n-- Powered by MongoDB & Elasticsearch. --")
+render_data_controls(total_cached, total_details)
+
+view = st.session_state.active_view
+
 
 if "auto_bootstrap_done" not in st.session_state:
     st.session_state.auto_bootstrap_done = False
@@ -573,83 +1012,6 @@ if not st.session_state.auto_bootstrap_done:
 if st.session_state.auto_bootstrap_status:
     st.caption(st.session_state.auto_bootstrap_status)
 
-st.sidebar.header("Data Controls")
-
-def _load_top_page_and_move(next_skip: int):
-    rows = mal.fetch_next_top_page_to_mongo(limit_start=next_skip)
-    if rows:
-        st.session_state.page_skip = next_skip
-        st.session_state.top_notice = ""
-    else:
-        st.session_state.top_notice = f"No anime found for offset {next_skip}. You may be at the end."
-    st.cache_data.clear()
-    st.rerun()
-
-
-if st.sidebar.button("Load Top 50", use_container_width=True):
-    st.session_state.limit = 50
-    _load_top_page_and_move(0)
-
-if st.sidebar.button("Quick Demo Prep", use_container_width=True):
-    with st.spinner("Preparing demo data (top + details + Elasticsearch)..."):
-        if total_cached < 50:
-            mal.fetch_next_top_page_to_mongo(limit_start=0)
-        st.cache_data.clear()
-        refreshed_total_cached = mal.get_anime_list_count()
-        quick_hydrate_count = min(max(refreshed_total_cached, 1), 50)
-        mal.hydrate_details_from_mongo_top(max_items=quick_hydrate_count, max_age_hours=24)
-        refreshed_total_details = mal.get_mongo_details_count()
-        try:
-            sync_es_if_needed(refreshed_total_cached, refreshed_total_details, force=True)
-        except Exception:
-            st.sidebar.warning("Elasticsearch unavailable: Top cache is ready, search/recommender will wait.")
-    st.cache_data.clear()
-    st.sidebar.success("Quick demo prep complete.")
-    st.rerun()
-
-if st.sidebar.button("Load Next 50", use_container_width=True):
-    next_skip = st.session_state.page_skip + 50
-    _load_top_page_and_move(next_skip)
-
-if st.sidebar.button("Load Next 500", use_container_width=True):
-    next_skip = st.session_state.page_skip + 500
-    _load_top_page_and_move(next_skip)
-
-if st.sidebar.button("Previous 50", use_container_width=True):
-    prev_skip = max(0, st.session_state.page_skip - 50)
-    _load_top_page_and_move(prev_skip)
-
-hydrate_max = max(total_cached, 1)
-hydrate_default = min(max(total_cached, 1), 50)
-hydrate_count = st.sidebar.number_input(
-    "Details to hydrate",
-    min_value=1,
-    max_value=hydrate_max,
-    value=hydrate_default,
-    step=1,
-)
-st.sidebar.caption("For demo speed, keep this around 50-100.")
-if st.sidebar.button("Hydrate Details", use_container_width=True):
-    with st.spinner("Hydrating details cache from top list..."):
-        hydrated = mal.hydrate_details_from_mongo_top(max_items=int(hydrate_count), max_age_hours=24)
-    st.cache_data.clear()
-    st.sidebar.success(f"Hydrated {len(hydrated)} anime details.")
-    st.rerun()
-
-if st.sidebar.button("Index All Details -> ES", use_container_width=True):
-    try:
-        with st.spinner("Indexing Mongo details into Elasticsearch..."):
-            indexed_light, indexed_details, _ = sync_es_if_needed(total_cached, total_details, force=True)
-        st.sidebar.success(
-            f"Indexed in Elasticsearch: list={indexed_light}, details={indexed_details}."
-        )
-    except Exception as exc:
-        st.sidebar.error("Elasticsearch unavailable.")
-        st.sidebar.code(str(exc))
-
-st.sidebar.markdown("---")
-st.sidebar.write(f"Cached in Mongo (top list): {total_cached}")
-st.sidebar.write(f"Cached in Mongo (details): {total_details}")
 
 animes = []
 try:
@@ -660,33 +1022,25 @@ except Exception as exc:
     hard_stop()
 
 if not animes:
-    st.info("No cached data yet. Click 'Load Top 50' in the sidebar.")
+    st.info("No cached data yet. Click Load Top 50 above.")
     hard_stop()
 
-tab_top, tab_search, tab_reco = st.tabs(["Top", "Search", "Recommender"])
-
-with tab_top:
+if view == "Top":
     st.subheader("Top Anime")
     if st.session_state.top_notice:
         st.warning(st.session_state.top_notice)
     page_start = st.session_state.page_skip + 1
     page_end = st.session_state.page_skip + len(animes)
     st.caption(f"Showing rank positions {page_start} to {page_end}")
-    cols = st.columns(5)
-    for idx, anime in enumerate(animes):
-        col = cols[idx % 5]
-        with col:
-            image_url = improve_image_quality(anime.get("image_url"))
-            if image_url:
-                st.image(image_url, use_container_width=True)
-            st.write(f"**{anime.get('title', '')}**")
-            st.write(f"Score: {anime.get('score', 'N/A')}")
-            meta = [anime.get("type"), anime.get("episodes")]
-            meta = [m for m in meta if m]
-            if meta:
-                st.caption(" | ".join(meta))
-            if st.button("Details", key=f"details_{anime['mal_id']}"):
-                open_details_from_row(anime)
+    for row_start in range(0, len(animes), 5):
+        row_items = animes[row_start: row_start + 5]
+        cols = st.columns(5)
+        for col_idx in range(5):
+            with cols[col_idx]:
+                if col_idx < len(row_items):
+                    render_top_card(row_items[col_idx], row_start + col_idx)
+                else:
+                    st.empty()
 
     st.subheader("Quick Stats")
     df = pd.DataFrame(animes)
@@ -699,7 +1053,7 @@ with tab_top:
         fig2 = px.bar(type_counts, x="type", y="count", title="Type distribution (loaded top list)")
         st.plotly_chart(fig2, use_container_width=True)
 
-with tab_search:
+elif view == "Search":
     st.subheader("Search")
     query = st.text_input("Query", placeholder="e.g. revenge dark fantasy sword", key="search_query")
     col1, col2 = st.columns(2)
@@ -735,13 +1089,13 @@ with tab_search:
     for idx, row in enumerate(search_results):
         render_result_card(row, "search", idx)
 
-with tab_reco:
-    st.subheader("Recommender")
+else:
+    st.subheader("Recommendations")
 
     try:
-        genres_options, themes_options, studios_options = _get_recommender_options()
+        genres_options, themes_options, studios_options = _get_recommendations_options()
     except Exception as exc:
-        st.error("Cannot load recommender options from Mongo.")
+        st.error("Cannot load recommendations options from Mongo.")
         st.code(str(exc))
         hard_stop()
 
@@ -760,7 +1114,7 @@ with tab_reco:
         step=0.1,
         key="reco_min_score",
     )
-    st.caption("Recommender returns all matching anime (up to Elasticsearch max window: 10,000).")
+    st.caption("Recommendations returns all matching anime (up to Elasticsearch max window: 10,000).")
     st.caption("Fast mode: no live scraping during recommendation.")
 
     preferred_genres = st.multiselect("Preferred genres", options=genres_options, default=[])

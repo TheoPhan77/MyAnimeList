@@ -45,6 +45,9 @@ services:
     restart: unless-stopped
     ports:
       - "8501:8501"
+    volumes:
+      - ./app:/app/app
+      - ./scraper:/app/scraper
     environment:
       MONGO_URI: mongodb://root:rootpass@mongo:27017/?authSource=admin
       ES_URL: http://elasticsearch:9200
@@ -54,6 +57,8 @@ services:
       AUTO_BOOTSTRAP_ES: "1"
       HTTP_SLEEP_SECONDS: "0.35"
       HYDRATE_MAX_WORKERS: "8"
+      STREAMLIT_SERVER_RUN_ON_SAVE: "true"
+      STREAMLIT_SERVER_FILE_WATCHER_TYPE: "poll"
     depends_on:
       mongo:
         condition: service_healthy

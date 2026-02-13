@@ -1,73 +1,86 @@
-﻿# AniMatch — MyAnimeList Recommender
+# AniMatch - MyAnimeList Recommender
 
-AniMatch est une application Data Engineering en Python (Streamlit) qui transforme des pages MyAnimeList en un produit complet de découverte d'anime:
+AniMatch est une application Data Engineering en Python (Streamlit) qui transforme des pages MyAnimeList en produit de recherche et recommandation anime.
 
-- scraping web (liste Top + pages détails),
-- cache MongoDB,
-- indexation et scoring Elasticsearch,
-- interface web avec navigation Top, Search, Recommender et page Anime Details.
+Le projet couvre:
+- scraping web (top list + fiches details),
+- stockage/cache MongoDB,
+- indexation et ranking Elasticsearch,
+- interface web Streamlit (Top, Search, Recommendations, details en modal).
 
-Ce README regroupe volontairement **la documentation technique, fonctionnelle et la checklist de soutenance** dans un seul fichier.
+Ce README fait office de rapport technique et fonctionnel.
 
 ## 1) Objectif du projet
 
-Le projet répond aux exigences du module:
+Le projet repond aux attendus du module:
 
-1. scraper des données depuis un site web réel,
-2. stocker ces données en base(s),
+1. scraper des donnees depuis un site reel,
+2. stocker ces donnees en base,
 3. construire une application web Python pour les exploiter,
-4. dockeriser tous les services,
-5. documenter clairement l'architecture, le lancement, les choix techniques,
-6. viser les bonus (auto-bootstrap, docker-compose, Elasticsearch).
+4. dockeriser l'ensemble des services,
+5. documenter l'architecture, l'execution et les choix techniques.
 
-## 2) Fonctionnalités utilisateur
+## 2) Fonctionnalites utilisateur (version actuelle)
 
-### Top
+### 2.1 Hero et navigation
 
-L'onglet `Top` affiche les animes classés depuis le cache Mongo, avec pagination contrôlée:
+- Landing hero pleine hauteur avec image de fond anime.
+- Navigation `Top`, `Search`, `Recommendations` via chips dans la meme fenetre.
+- Cartes statistiques stylisees:
+  - `Cached top list`
+  - `Cached details`
+  - `Mode`
 
-- `Load Top 50`,
-- `Load Next 50`,
-- `Load Next 500`,
-- `Previous 50`.
+### 2.2 Data controls
 
-Chaque carte anime affiche image, titre, score, métadonnées et bouton `Details`.
+- Panneau `Data controls` stylise (control center) avec etat cache et fenetre active.
+- Actions principales:
+  - `Load Top 50`
+  - `Previous 50`
+  - `Load Next 50`
+  - `Load Next 500`
+- Bloc `Advanced controls`:
+  - `Hydrate Details`
+  - `Index All Details -> ES`
 
-### Search
+### 2.3 Top
 
-L'onglet `Search` utilise Elasticsearch pour une recherche full-text sur les champs texte (titre/synopsis). L'utilisateur contrôle:
+- Affichage du top depuis MongoDB.
+- Cartes anime encadrees contenant:
+  - image (ratio original conserve),
+  - titre,
+  - rank/score,
+  - type/episodes,
+  - bouton `Details`.
+- Graphiques rapides:
+  - distribution des scores,
+  - distribution des types.
 
-- la requête,
-- le nombre de résultats,
-- un score minimum.
+### 2.4 Search
 
-Les résultats sont enrichis avec les données Mongo (image, type, URL) et sont cliquables vers la page détails.
+- Recherche full-text Elasticsearch sur titre/synopsis.
+- Controles utilisateur:
+  - requete texte,
+  - nombre de resultats,
+  - score minimum.
+- Resultats enrichis avec donnees Mongo (image, rank, type, URL).
 
-### Recommender
+### 2.5 Recommendations
 
-L'onglet `Recommender` applique une logique de scoring basée sur les préférences:
+- Recommandation par preferences:
+  - genres,
+  - themes,
+  - studios,
+  - mot-cle optionnel,
+  - score minimum.
+- Exclusion interne des types non souhaites (`Music`, `PV`, `CM` par defaut).
 
-- genres,
-- thèmes,
-- studios,
-- mot-clé optionnel,
-- score minimum.
+### 2.6 Anime details
 
-Le filtrage interne exclut `Music`, `PV`, `CM` sans exposer ce réglage à l'utilisateur.
-
-### Anime Details
-
-La page `Anime_Details` affiche une fiche complète d'un anime:
-
-- titres,
-- image,
-- score/épisodes/source/rating,
-- genres/thèmes/studios,
-- synopsis,
-- métadonnées de diffusion et popularité,
-- lien vers MyAnimeList.
-
-Elle utilise un cache-first: si la fiche existe et est fraîche en base, elle est réutilisée; sinon elle est re-scrapée puis mise en cache.
+- Les details s'ouvrent dans un dialog Streamlit (modal) directement depuis la carte.
+- Strategie cache-first:
+  - lecture Mongo si fraiche,
+  - sinon re-scrape puis mise a jour cache.
 
 ## 3) Architecture technique
 
@@ -76,86 +89,91 @@ Flux global:
 ```text
 MyAnimeList HTML -> scraper/scraper.py -> MongoDB (anime_list + anime_details)
                   -> Elasticsearch (anime_index)
-                  -> Streamlit UI (Top/Search/Recommender/Details)
+                  -> Streamlit (app/app.py)
 ```
 
-Composants principaux:
+Composants:
 
-- `scraper/scraper.py`: scraping, parsing, upsert Mongo, hydration détails, indexation/query Elasticsearch.
-- `app/app.py`: page principale Streamlit (tabs Top/Search/Recommender + contrôles de données).
-- `app/pages/Anime_Details.py`: page dédiée à un anime.
-- `docker-compose.yml`: orchestration complète des services.
+- `scraper/scraper.py`
+  - scraping top et details,
+  - normalisation,
+  - upsert Mongo,
+  - hydration parallele,
+  - indexation et requetes Elasticsearch.
+- `app/app.py`
+  - UI complete Streamlit (hero, top/search/recommendations, controls, details dialog).
+- `app/Dockerfile`
+  - image applicative Streamlit.
+- `docker-compose.yml`
+  - orchestration MongoDB, Elasticsearch, App, Mongo Express.
 
-## 4) Modèle de données
+## 4) Modele de donnees
 
-### Collection Mongo `animedb.anime_list` (cache léger)
+### 4.1 MongoDB `animedb.anime_list` (cache leger)
 
 Champs principaux:
+- `_id` (mal_id),
+- `rank`,
+- `title`,
+- `url`,
+- `score`,
+- `image_url`,
+- `type`,
+- `episodes`.
 
-- `mal_id`, `rank`, `title`, `url`, `score`, `image_url`, `type`, `episodes`.
-
-### Collection Mongo `animedb.anime_details` (cache riche)
+### 4.2 MongoDB `animedb.anime_details` (cache riche)
 
 Champs principaux:
-
-- identifiants et titres,
+- titres (`title`, `title_english`, `title_japanese`),
 - `synopsis`,
 - `score`, `scored_by`, `rank`, `popularity`, `members`,
 - `genres`, `themes`, `studios`, `source`,
-- infos de diffusion (`status`, `aired`, `duration`, `rating`, etc.),
-- `details_fetched_at` pour la fraîcheur du cache.
+- metadonnees diffusion (`status`, `aired`, `broadcast`, `duration`, `rating`...),
+- `details_fetched_at`.
 
-### Index Elasticsearch `anime_index`
+### 4.3 Elasticsearch `anime_index`
 
-Utilisé pour:
-
+Usage:
 - recherche textuelle multi-champs,
 - scoring de pertinence,
-- recommandations par préférences.
+- recommandation ponderee (genres/themes/studios/query).
 
-## 5) Lancement du projet (procédure complète)
+## 5) Execution du projet
 
-Depuis la racine du repo:
+Depuis `6Evaluation/MyAnimeList`:
 
 ```bash
 docker compose up -d --build
 ```
 
 Endpoints:
-
 - App Streamlit: `http://localhost:8501`
 - Mongo Express: `http://localhost:8081`
 - Elasticsearch: `http://localhost:9200`
 
-Arrêt:
+Arret:
 
 ```bash
 docker compose down
 ```
 
-Vérification des containers:
+Statut services:
 
 ```bash
 docker compose ps
 ```
 
 Services attendus:
-
 - `myanimelist-app`
 - `myanimelist-mongo`
 - `myanimelist-elasticsearch`
 - `myanimelist-mongo-express`
 
-## 6) Auto-bootstrap (mode démo rapide)
+## 6) Configuration (variables utiles)
 
-Au démarrage, l'app peut se préparer automatiquement:
-
-1. charger le top si nécessaire,
-2. hydrater les fiches détails,
-3. indexer Elasticsearch.
-
-Variables utiles dans `docker-compose.yml`:
-
+Variables gerees cote `docker-compose.yml`:
+- `MONGO_URI`
+- `ES_URL`
 - `AUTO_BOOTSTRAP`
 - `AUTO_BOOTSTRAP_TOP`
 - `AUTO_BOOTSTRAP_DETAILS`
@@ -163,77 +181,95 @@ Variables utiles dans `docker-compose.yml`:
 - `HTTP_SLEEP_SECONDS`
 - `HYDRATE_MAX_WORKERS`
 
-## 7) Guide de démonstration (2 à 4 min)
+## 7) Auto-bootstrap (mode demo)
 
-1. Ouvrir `localhost:8501` et montrer le statut de bootstrap.
-2. Dans `Top`, charger/naviguer et ouvrir un anime via `Details`.
-3. Dans `Search`, lancer une requête texte et ouvrir un résultat.
-4. Dans `Recommender`, sélectionner préférences et lancer la recommandation.
-5. Montrer rapidement `localhost:8081` (Mongo Express) et `localhost:9200` (ES).
+Au premier chargement, l'app peut automatiquement:
 
-## 8) Choix techniques
+1. charger des pages top en cache Mongo,
+2. hydrater les details,
+3. synchroniser Elasticsearch.
 
-- **MongoDB**: schéma souple pour données scrapées et mise à jour incrémentale.
-- **Elasticsearch**: scoring/boost et recherche full-text performante.
-- **Streamlit**: développement rapide, rendu lisible pour soutenance.
-- **Docker Compose**: exécution reproductible sur machine évaluateur.
+Objectif: rendre la demo immediatement utilisable sans preparation manuelle.
 
-## 9) Performance et robustesse
+## 8) Comportements importants observes
 
-Le projet réduit le temps de démo grâce à:
+### 8.1 Pourquoi les compteurs ne sont pas toujours "ronds"
 
-- cache Mongo (évite re-scrape systématique),
-- hydration parallèle des détails,
-- synchronisation ES conditionnelle,
-- auto-bootstrap au démarrage.
+Exemple constate:
+- `Cached top list = 301`
+- `Cached details = 51`
 
-Limites connues:
+Ce comportement est normal:
+- le compteur `top list` compte les documents en cache, pas un "rank max strict",
+- le classement MAL peut contenir des ex-aequo/changements dynamiques pendant le scraping pagine,
+- le cache details peut contenir des entrees supplementaires deja ouvertes en `Details` lors d'une session precedente (volume Mongo persistant).
 
-- dépendance à la latence réseau et au site source,
-- fragilité possible si MyAnimeList change son HTML,
-- premier run plus lent qu'un run avec cache chaud.
+### 8.2 Persistance Docker
 
-## 10) Dépannage
+Les volumes `mongo_data` et `es_data` conservent les donnees entre redemarrages.
 
-Si l'app ne répond pas:
+## 9) Demo soutenance (2 a 4 minutes)
+
+1. Ouvrir `localhost:8501`.
+2. Montrer hero + stats + `Data controls`.
+3. Dans `Top`, ouvrir une fiche via `Details`.
+4. Dans `Search`, lancer une requete texte.
+5. Dans `Recommendations`, selectionner des preferences et executer.
+6. Montrer rapidement `localhost:8081` (Mongo Express) et `localhost:9200` (ES).
+
+## 10) Choix techniques
+
+- **MongoDB**: stockage souple et incremental des donnees scrappees.
+- **Elasticsearch**: recherche full-text + scoring/boost avance.
+- **Streamlit**: rapidite de developpement et demonstration immediate.
+- **Docker Compose**: setup reproductible sur poste evaluateur.
+
+## 11) Limites et risques
+
+- dependance a la stabilite HTML de MyAnimeList,
+- latence reseau externe (scraping),
+- premier run plus long qu'un run avec cache chaud,
+- resultats variables si le top MAL evolue pendant le scraping.
+
+## 12) Depannage
+
+Si l'app ne repond pas:
 
 ```bash
 docker compose ps
 docker compose logs app
 ```
 
-Si Search/Recommender renvoie peu de résultats:
+Si Search/Recommendations renvoie peu de resultats:
 
-- lancer `Quick Demo Prep`,
-- puis `Index All Details -> ES`.
+1. hydrater davantage de details via `Advanced controls`,
+2. executer `Index All Details -> ES`.
 
 Si Mongo est inaccessible:
 
-- vérifier que `mongo` est `Up`,
-- vérifier les ports déjà utilisés localement.
+1. verifier que le service `mongo` est `Up`,
+2. verifier les ports locaux occupes,
+3. verifier la variable `MONGO_URI`.
 
-## 11) Checklist de soutenance (intégrée)
+## 13) Checklist de rendu
 
-### Exigences obligatoires
+### Obligatoire
 
-- [ ] Travail en binôme présenté clairement.
-- [ ] Données scrapées depuis MyAnimeList.
-- [ ] Données stockées en base (Mongo + index Elasticsearch).
-- [ ] Application web Python fonctionnelle (Streamlit).
-- [ ] Affichage pertinent des données (cartes, détails, graphes, recherche/reco).
-- [ ] Services exécutés dans des containers Docker.
-- [ ] Documentation technique + fonctionnelle disponible (ce README).
+- [ ] Donnees scrappees depuis MyAnimeList.
+- [ ] Donnees stockees en base (Mongo + ES).
+- [ ] Application Python fonctionnelle (Streamlit).
+- [ ] Dockerisation complete fonctionnelle.
+- [ ] README a jour (ce document).
 - [ ] Repository GitHub public accessible.
 
 ### Bonus
 
-- [ ] Auto-bootstrap de données au lancement.
-- [ ] Orchestration complète via docker-compose.
-- [ ] Moteur de recherche/recommandation avec Elasticsearch.
+- [ ] Auto-bootstrap.
+- [ ] Orchestration complete docker-compose.
+- [ ] Recherche/recommandation Elasticsearch.
 
-### Vérification finale avant rendu
+### Verification finale
 
 - [ ] `docker compose up -d --build` fonctionne sur clone propre.
 - [ ] Aucun secret local dans le repo.
-- [ ] README à jour avec procédures, architecture, fonctionnalités.
-- [ ] Dernier code poussé sur GitHub public.
+- [ ] Dernier code pousse.
