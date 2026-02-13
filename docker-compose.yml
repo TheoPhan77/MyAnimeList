@@ -24,6 +24,12 @@ services:
       - "9200:9200"
     volumes:
       - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200 >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
 
   app:
     build:
@@ -43,8 +49,10 @@ services:
       HTTP_SLEEP_SECONDS: "0.35"
       HYDRATE_MAX_WORKERS: "8"
     depends_on:
-      - mongo
-      - elasticsearch
+      mongo:
+        condition: service_started
+      elasticsearch:
+        condition: service_healthy
 
   mongo-express:
     image: mongo-express:1
