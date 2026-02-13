@@ -479,8 +479,12 @@ def sync_es_if_needed(total_cached_count, total_details_count, force=False):
     target_state = (total_cached_count, total_details_count)
     if not force and st.session_state.es_sync_state == target_state:
         return 0, 0, False
-    indexed_light = mal.index_mongo_list_to_es(limit=None)
-    indexed_details = mal.index_mongo_details_to_es(limit=None)
+    try:
+        indexed_light = mal.index_mongo_list_to_es(limit=None)
+        indexed_details = mal.index_mongo_details_to_es(limit=None)
+    except Exception as exc:
+        st.session_state.es_sync_state = None
+        raise RuntimeError(f"Elasticsearch not reachable: {exc}") from exc
     st.session_state.es_sync_state = target_state
     return indexed_light, indexed_details, True
 
@@ -527,13 +531,16 @@ def auto_bootstrap(total_cached, total_details):
     if A_AUTO_BOOTSTRAP_ES:
         es_count = get_es_doc_count()
         if changed or es_count == 0:
-            with st.spinner("Auto-bootstrap: indexing Elasticsearch..."):
-                indexed_light, indexed_details, _ = sync_es_if_needed(
-                    total_cached,
-                    total_details,
-                    force=True,
-                )
-            actions.append(f"es list={indexed_light}, details={indexed_details}")
+            try:
+                with st.spinner("Auto-bootstrap: indexing Elasticsearch..."):
+                    indexed_light, indexed_details, _ = sync_es_if_needed(
+                        total_cached,
+                        total_details,
+                        force=True,
+                    )
+                actions.append(f"es list={indexed_light}, details={indexed_details}")
+            except Exception:
+                actions.append("es unavailable (skipped)")
 
     if not actions:
         return total_cached, total_details, "Auto-bootstrap: cache already ready."
@@ -592,7 +599,10 @@ if st.sidebar.button("Quick Demo Prep", use_container_width=True):
         quick_hydrate_count = min(max(refreshed_total_cached, 1), 50)
         mal.hydrate_details_from_mongo_top(max_items=quick_hydrate_count, max_age_hours=24)
         refreshed_total_details = mal.get_mongo_details_count()
-        sync_es_if_needed(refreshed_total_cached, refreshed_total_details, force=True)
+        try:
+            sync_es_if_needed(refreshed_total_cached, refreshed_total_details, force=True)
+        except Exception:
+            st.sidebar.warning("Elasticsearch unavailable: Top cache is ready, search/recommender will wait.")
     st.cache_data.clear()
     st.sidebar.success("Quick demo prep complete.")
     st.rerun()
@@ -627,11 +637,15 @@ if st.sidebar.button("Hydrate Details", use_container_width=True):
     st.rerun()
 
 if st.sidebar.button("Index All Details -> ES", use_container_width=True):
-    with st.spinner("Indexing Mongo details into Elasticsearch..."):
-        indexed_light, indexed_details, _ = sync_es_if_needed(total_cached, total_details, force=True)
-    st.sidebar.success(
-        f"Indexed in Elasticsearch: list={indexed_light}, details={indexed_details}."
-    )
+    try:
+        with st.spinner("Indexing Mongo details into Elasticsearch..."):
+            indexed_light, indexed_details, _ = sync_es_if_needed(total_cached, total_details, force=True)
+        st.sidebar.success(
+            f"Indexed in Elasticsearch: list={indexed_light}, details={indexed_details}."
+        )
+    except Exception as exc:
+        st.sidebar.error("Elasticsearch unavailable.")
+        st.sidebar.code(str(exc))
 
 st.sidebar.markdown("---")
 st.sidebar.write(f"Cached in Mongo (top list): {total_cached}")
