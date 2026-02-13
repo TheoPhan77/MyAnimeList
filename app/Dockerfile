@@ -5,6 +5,7 @@ WORKDIR /app
 COPY app/ /app/app/
 COPY scraper/ /app/scraper/
 
+RUN pip install --no-cache-dir --upgrade pip
 RUN pip install --no-cache-dir -r /app/app/requirements.txt
 
 EXPOSE 8501
